@@ -49,7 +49,7 @@
 
 设输入高斯点集合为：
 
-$$\[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, \boldsymbol{\Sigma}_i, \mathbf{f}_i, \alpha_i) \}\]$$
+ $$\[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, \boldsymbol{\Sigma}_i, \mathbf{f}_i, \alpha_i) \}\]$$
 
 其中：
 - $$\( \mathbf{x}_i \in \mathbb{R}^3 \)$$ ：高斯中心位置  
@@ -65,7 +65,7 @@ $$\[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, \boldsymbol{\Sigma}_i, \mathb
 
 $$\[\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r\]$$
 
-则认为两者在空间上冗余，需要执行合并操作；否则，$$\( g_i \)$$ 作为新的代表点保留。
+则认为两者在空间上冗余，需要执行合并操作；否则， $$\( g_i \)$$ 作为新的代表点保留。
 
 ---
 
@@ -86,6 +86,7 @@ $$
 ### 3.4 位置与特征合并
 
 **位置合并：**
+
 $$
 \[
 \mathbf{x}_{\text{new}} =
