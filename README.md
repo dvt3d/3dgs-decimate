@@ -221,8 +221,6 @@ $$O(N \log N)$$
 
 $$O(N)$$
 
----
-
 ## 5. Advantages and Effects
 
 ### 5.1 Visual Quality
