@@ -49,7 +49,7 @@
 
 设输入高斯点集合为：
 
- $$[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, {\Sigma}_i, \mathbf{f}_i, \alpha_i) \}]$$
+ $$\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, {\Sigma}_i, \mathbf{f}_i, \alpha_i) \}$$
 
 其中：
 - $(\mathbf{x}_i \in \mathbb{R}^3 )$ ：高斯中心位置  
@@ -61,7 +61,7 @@
 
 对于高斯点 $(g_i)$，若存在代表点 $(g_j )$ 满足：
 
-$$[\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r]$$
+$$\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r$$
 
 则认为两者在空间上冗余，需要执行合并操作；否则， $(g_i)$ 作为新的代表点保留。
 
@@ -70,84 +70,129 @@ $$[\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r]$$
 合并权重定义为：
 
 $$
-[
 w_i = \alpha_i
-]
 $$
 
 （工程中可扩展为 $( w_i = \alpha_i \cdot s_i )，其中 (s_i)$ 表示局部尺度因子。）
 
-### 3.4 位置与特征合并
+### 3.4 位置与属性合并
 
-**位置合并：**
+在基于半径约束的空间聚合过程中，多个落入同一聚合簇内的高斯点需要合并为一个具有代表性的高斯，以降低数据规模并保持整体外观一致性。合并过程在位置、特征、透明度、尺度及旋转等多个维度上进行。
+
+#### 3.4.1 位置合并
+
+合并后高斯点的位置采用加权质心方式计算：
 
 $$
-[
 \mathbf{x}_{\text{new}} =
 \frac{\sum_i w_i \mathbf{x}_i}{\sum_i w_i}
-]
 $$
 
-**特征合并（颜色 / SH）：**
+其中：
+- $\mathbf{x}_i$：第 $i$ 个高斯点的中心位置
+- $w_i$：对应权重（通常与透明度或重要性相关）
+
+#### 3.4.2 特征合并（颜色 / 球谐系数
+
+高斯点的颜色及高阶球谐（Spherical Harmonics, SH）特征定义在线性空间中，可采用加权平均方式进行合并：
 
 $$
-[
 \mathbf{f}_{\text{new}} =
 \frac{\sum_i w_i \mathbf{f}_i}{\sum_i w_i}
-]
 $$
 
-### 3.5 不透明度融合
+其中 $\mathbf{f}_i$ 包括 DC 分量与高阶球谐系数。由于球谐展开定义在线性空间中，该加权平均能够保持辐射度期望的一致性。
 
-采用乘法模型进行融合：
+
+#### 3.4.3 透明度合并
+
+为正确描述多个高斯点在空间上的遮挡关系，透明度采用累积遮挡概率形式进行合并：
 
 $$
-[
 \alpha_{\text{new}} = 1 - \prod_i (1 - \alpha_i)
-]
 $$
 
-该方式能够保持遮挡关系的一致性。
+该形式等价于在对数空间中累加 $\log(1-\alpha)$，可避免线性平均造成的透明度低估。
 
-### 3.6 尺度合并与约束
+#### 3.4.4 尺度合并
 
-位置方差估计：
-
-$$
-[
-{\sigma}^2_{\text{pos}} =
-\mathbb{E}[\mathbf{x}^2] - \mathbf{x}_{\text{new}}^2
-]
-$$
-
-尺度融合：
+空间尺度首先由高斯中心的离散程度给出，其统计方差为：
 
 $$
-[
-{\sigma}^2_{\text{new}} =
-{\sigma}^2_{\text{pos}} + \mathbb{E}[{\Sigma}_i^2]
-]
+\sigma^2_{\text{pos}} = \mathbb{E}[\mathbf{x}^2] - \mathbf{x}_{\text{new}}^2
 $$
 
-并引入尺度上限约束：
+在实际实现中，该期望通过加权求和形式计算，并与原始高斯尺度联合得到合并尺度：
 
 $$
-[
-{\Sigma}_{\text{new}} \le k \cdot \mathbb{E}[{\Sigma}_i]
-]
+\sigma_{\text{new}}^2 = \frac{\sum_i w_i \lVert \mathbf{x}_i - \mathbf{x}_{\text{new}} \rVert^2}{\sum_i w_i} + \frac{\sum_i w_i \sigma_i^2}{\sum_i w_i}
 $$
 
-其中 $(k)$ 为经验系数，用于防止尺度异常膨胀。
+为防止尺度异常膨胀，在工程实现中引入尺度上限约束：
 
-### 3.7 哈希网格与 27 邻域
+$$
+\sigma_{\text{new}} \le k \cdot \frac{\sum_i w_i \sigma_i}{\sum_i w_i}
+$$
+
+#### 3.4.5 旋转合并 
+
+高斯椭球的旋转采用单位四元数表示。设第 $i$ 个高斯点的旋转为：
+
+$$
+\mathbf{q}_i = (x_i, y_i, z_i, w_i)
+$$
+
+$$
+\qquad \lVert \mathbf{q}_i \rVert = 1
+$$
+
+- **（1）同半球约束**
+
+由于四元数具有符号二义性（$\mathbf{q}$ 与 $-\mathbf{q}$ 表示相同旋转），在合并前需对四元数进行同半球对齐。  
+以参考四元数 $\mathbf{q}_{\mathrm{ref}}$ 为基准，对每个四元数执行：
+
+$$
+\mathbf{q}_i' =
+\begin{cases}
+\mathbf{q}_i, & \mathbf{q}_{\mathrm{ref}} \cdot \mathbf{q}_i \ge 0 \\
+-\mathbf{q}_i, & \text{otherwise}
+\end{cases}
+$$
+
+其中 $\cdot$ 表示四元数内积。
+
+- **（2）加权四元数累加**
+
+在完成同半球对齐后，对四元数进行加权累加：
+
+$$
+\tilde{\mathbf{q}}
+=
+\sum_i w_i \, \mathbf{q}_i'
+$$
+
+其中 $w_i$ 为对应高斯点的权重。
+
+- **（3）归一化**
+
+通过对累加结果进行归一化，得到合并后的旋转四元数：
+
+$$
+\mathbf{q}_{\mathrm{new}}
+=
+\frac{\tilde{\mathbf{q}}}{\lVert \tilde{\mathbf{q}} \rVert}
+$$
+
+该四元数用于描述合并后高斯椭球的主轴方向。
+
+
+### 3.5 哈希网格与 27 邻域
 
 当网格单元边长设置为 $(r)$ 时，任意距离不超过 $(r)$ 的点，其网格索引在三个坐标轴方向上的偏移范围为 $([-1, 1])$。  
 因此，仅需检查：
 
 $$
-[
 3 \times 3 \times 3 = 27
-]
 $$
 
 个相邻网格单元即可保证不遗漏任何潜在近邻点。
@@ -158,20 +203,20 @@ $$
 
 - **排序阶段：**  
 
- $$[O(N \log N)] $$
+ $$O(N \log N) $$
 
 - **半径抽稀与合并阶段（哈希网格加速）：**  
   平均情况下，每个点仅检查常数数量的候选点：  
 
- $$[O(N)]$$
+ $$O(N)$$
 
 - **总体时间复杂度：**  
 
- $$[O(N \log N)]$$
+ $$O(N \log N)$$
 
 - **空间复杂度：**  
 
-$$[ O(N)]$$
+$$O(N)$$
 
 ## 5. 技术效果与方案优势
 

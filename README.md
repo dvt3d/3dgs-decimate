@@ -49,7 +49,7 @@ This scheme does not rely on regular voxel boundaries, multi-level LOD hierarchi
 
 Let the input Gaussian set be defined as:
 
-$$[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, {\Sigma}_i, \mathbf{f}_i, \alpha_i) \}]$$
+$$\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, {\Sigma}_i, \mathbf{f}_i, \alpha_i) \}$$
 
 where:
 - $(\mathbf{x}_i \in \mathbb{R}^3 )$ is the Gaussian center
@@ -61,7 +61,7 @@ where:
 
 For a Gaussian $(g_i)$，if there exists a representative $(g_j )$ such that:
 
-$$[\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r]$$
+$$\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r$$
 
 then the two Gaussians are considered spatially redundant and should be merged. Otherwise, $(g_i)$ is preserved as a new representative.
 
@@ -70,82 +70,124 @@ then the two Gaussians are considered spatially redundant and should be merged. 
 The merge weight is defined as:
 
 $$
-[
 w_i = \alpha_i
-]
 $$
 
 （In practice, this can be extended to $( w_i = \alpha_i \cdot s_i )，where (s_i)$ is a local scale factor.）
 
----
 
-### 3.4 Position and Feature Merging
 
-**Position merging:**
+### 3.4 Position and Attribute Merge
+
+In radius-constrained spatial aggregation, multiple Gaussian splats falling within the same aggregation cluster are merged into a representative Gaussian in order to reduce data size while preserving overall visual appearance. The merge operation is performed across multiple dimensions, including position, features, opacity, scale, and rotation.
+
+#### 3.4.1 Position Merge
+
+The position of the merged Gaussian is computed as a weighted centroid:
 
 $$
-[
 \mathbf{x}_{\text{new}} =
 \frac{\sum_i w_i \mathbf{x}_i}{\sum_i w_i}
-]
 $$
 
-**Feature merging (color / SH):**
+where:
+- $\mathbf{x}_i$ denotes the center position of the $i$-th Gaussian,
+- $w_i$ is the corresponding weight, typically related to opacity or importance.
+
+
+
+#### 3.4.2 Feature Merge (Color / Spherical Harmonics)
+
+Color and higher-order spherical harmonics (SH) features of Gaussians are defined in a linear space and can therefore be merged using weighted averaging:
 
 $$
-[
 \mathbf{f}_{\text{new}} =
 \frac{\sum_i w_i \mathbf{f}_i}{\sum_i w_i}
-]
 $$
 
----
+where $\mathbf{f}_i$ includes the DC component and higher-order spherical harmonics coefficients. Since spherical harmonics are defined in a linear space, weighted averaging preserves the expected radiance.
 
-### 3.5 Opacity Fusion
+#### 3.4.3 Opacity Merge
 
-Opacity is merged using a multiplicative model:
+To correctly model the occlusion relationship among multiple Gaussians, opacity is merged using cumulative occlusion probability:
 
 $$
-[
 \alpha_{\text{new}} = 1 - \prod_i (1 - \alpha_i)
-]
 $$
 
-This formulation preserves consistent occlusion behavior.
+This formulation is equivalent to accumulating $\log(1 - \alpha)$ in log space and avoids the underestimation caused by linear averaging.
 
----
 
-### 3.6 Scale Merging and Constraint
+#### 3.4.4 Scale Merge
 
-Position variance estimation:
-
-$$
-[
-{\sigma}^2_{\text{pos}} =
-\mathbb{E}[\mathbf{x}^2] - \mathbf{x}_{\text{new}}^2
-]
-$$
-
-Scale fusion:
+The spatial scale is first determined by the dispersion of Gaussian centers, whose statistical variance is given by:
 
 $$
-[
-{\sigma}^2_{\text{new}} =
-{\sigma}^2_{\text{pos}} + \mathbb{E}[{\Sigma}_i^2]
-]
+\sigma^2_{\text{pos}} = \mathbb{E}[\mathbf{x}^2] - \mathbf{x}_{\text{new}}^2
 $$
 
-An upper bound constraint is applied:
+In practice, this expectation is computed using weighted summation and combined with the original Gaussian scales to obtain the merged scale:
 
 $$
-[
-{\Sigma}_{\text{new}} \le k \cdot \mathbb{E}[{\Sigma}_i]
-]
+\sigma_{\text{new}}^2 =
+\frac{\sum_i w_i \lVert \mathbf{x}_i - \mathbf{x}_{\text{new}} \rVert^2}{\sum_i w_i} +
+\frac{\sum_i w_i \sigma_i^2}{\sum_i w_i}
 $$
 
-where $(k)$ is an empirical coefficient used to prevent excessive scale inflation.
+To prevent abnormal scale inflation, an upper bound constraint is introduced in the implementation:
 
----
+$$
+\sigma_{\text{new}} \le k \cdot \frac{\sum_i w_i \sigma_i}{\sum_i w_i}
+$$
+
+#### 3.4.5 Rotation Merge
+
+The rotation of a Gaussian ellipsoid is represented using a unit quaternion. Let the rotation of the $i$-th Gaussian be:
+
+$$
+\mathbf{q}_i = (x_i, y_i, z_i, w_i),
+\qquad \lVert \mathbf{q}_i \rVert = 1
+$$
+
+- **(1) Hemisphere Alignment**
+
+Since quaternions have sign ambiguity (i.e., $\mathbf{q}$ and $-\mathbf{q}$ represent the same rotation), all quaternions are first aligned to the same hemisphere before merging.  
+Using a reference quaternion $\mathbf{q}_{\mathrm{ref}}$, each quaternion is adjusted as:
+
+$$
+\mathbf{q}_i' =
+\begin{cases}
+\mathbf{q}_i, & \mathbf{q}_{\mathrm{ref}} \cdot \mathbf{q}_i \ge 0 \\
+-\mathbf{q}_i, & \text{otherwise}
+\end{cases}
+$$
+
+where $\cdot$ denotes the quaternion inner product.
+
+- **(2) Weighted Quaternion Accumulation**
+
+After hemisphere alignment, quaternions are accumulated using weighted summation:
+
+$$
+\tilde{\mathbf{q}}
+=
+\sum_i w_i \, \mathbf{q}_i'
+$$
+
+where $w_i$ is the weight associated with the $i$-th Gaussian.
+
+- **(3) Normalization**
+
+The accumulated quaternion is normalized to obtain the merged rotation:
+
+$$
+\mathbf{q}_{\mathrm{new}}
+=
+\frac{\tilde{\mathbf{q}}}{\lVert \tilde{\mathbf{q}} \rVert}
+$$
+
+This quaternion represents the principal axis orientation of the merged Gaussian ellipsoid.
+
 
 ### 3.7 Hash Grid and 27-Cell Neighborhood
 
@@ -153,9 +195,7 @@ When the grid cell edge length is set to $(r)$, any two points within distance $
 Therefore, only:
 
 $$
-[
 3 \times 3 \times 3 = 27
-]
 $$
 
 neighboring grid cells need to be examined to ensure no valid neighbors are missed.
@@ -166,20 +206,20 @@ Let (N) be the number of input Gaussians and (M) the number of representatives a
 
 - **Sorting:**
 
-$$[O(N \log N)] $$
+$$O(N \log N) $$
 
 - **Radius-based thinning and merging (with hash grid acceleration):**  
   Each Gaussian checks only a constant number of candidates on average:
 
-$$[O(N)]$$
+$$O(N)$$
 
 - **Overall time complexity:**
 
-$$[O(N \log N)]$$
+$$O(N \log N)$$
 
 - **Space complexity:**
 
-$$[ O(N)]$$
+$$O(N)$$
 
 ---
 
