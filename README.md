@@ -1,217 +1,209 @@
-# 基于半径约束的空间抽稀与合并方案（Radius-based Spatial Thinning & Merge）
 
-## 1. 技术方案说明
+# Radius-based Spatial Thinning & Merge Scheme
 
-针对 3D Gaussian Splatting（3DGS）数据在高密度区域存在大量空间冗余、传统体素抽稀方法易产生格子感与结构伪影的问题，提出一种**基于半径约束的空间抽稀与合并方案**。
+![lod.webp](lod.webp)
 
-该方案以**空间距离约束**作为核心准则，通过设定最小空间间距（半径阈值），对高斯点进行逐点筛选与合并处理。算法优先保留对视觉贡献较大的高斯点，并在其空间邻域内抑制冗余点，从而实现空间分布的均匀化。
+## 1. Technical Overview
 
-为保证在大规模数据场景下的计算效率，引入**哈希网格（Hash Grid）**作为空间加速结构，将三维空间划分为边长等于半径阈值的规则单元，仅在当前单元及其相邻单元内进行近邻查询，在保证结果完整性的前提下，将计算复杂度控制在近似线性范围内。
+To address the severe spatial redundancy of 3D Gaussian Splatting (3DGS) data in high-density regions and the grid artifacts and structural aliasing commonly introduced by traditional voxel-based thinning methods, we propose a radius-based spatial thinning and merge scheme.
 
-当某一高斯点的半径邻域内已存在代表点时，其几何与属性参数将按权重合并至该代表点；若不存在，则该高斯点作为新的代表点保留。合并完成后，对高斯尺度施加上限约束，避免因多点融合导致尺度异常膨胀，从而保证渲染稳定性。
+This method uses a spatial distance constraint as its core criterion. By defining a minimum spatial separation (radius threshold), Gaussian primitives are processed through point-wise selection and merging. The algorithm prioritizes Gaussians with higher visual contribution and suppresses redundant points within their spatial neighborhoods, thereby achieving a more uniform spatial distribution.
 
-该方案不依赖规则体素边界，不引入多层级 LOD 或信息论距离度量，适用于大规模 3DGS 数据的离线抽稀与工程级优化处理。
+To ensure computational efficiency for large-scale datasets, a hash grid is introduced as a spatial acceleration structure. The 3D space is partitioned into regular cells whose edge length equals the radius threshold. Neighbor searches are restricted to the current cell and its adjacent cells only, reducing the computational complexity to near-linear while guaranteeing completeness.
 
----
+If a representative Gaussian already exists within the radius neighborhood of a given Gaussian, its geometric and attribute parameters are merged into that representative using weighted aggregation. Otherwise, the Gaussian is retained as a new representative. After merging, an upper bound is enforced on the Gaussian scale to prevent abnormal inflation caused by excessive fusion, ensuring rendering stability.
 
-## 2. 算法流程（Algorithm）
+This scheme does not rely on regular voxel boundaries, multi-level LOD hierarchies, or information-theoretic distance metrics. It is well suited for offline thinning and engineering-level optimization of large-scale 3DGS datasets.
 
-**输入：**  
-- 高斯点集合  
-- 半径阈值 (r)
 
-**输出：**  
-- 抽稀并合并后的高斯点集合
+## 2. Algorithm Workflow
 
-**步骤：**
+**Input:**
+- Gaussian set
+- Radius threshold (r)
 
-1. **重要性排序**  
-   根据不透明度与局部尺度等指标对高斯点进行排序，优先处理视觉贡献较大的点。
+**Output：**
+- Thinned and merged Gaussian set
 
-2. **空间哈希构建**  
-   将空间划分为边长为 (r) 的网格单元，并通过哈希映射建立空间索引。
+**Steps：**
 
-3. **半径邻域判定**  
-   对每个高斯点，仅在其所在网格单元及其相邻的 27 个网格单元中进行近邻搜索。
+1. **Importance Sorting**  
+   Gaussians are sorted according to opacity and local scale to prioritize primitives with higher visual contribution.
 
-4. **抽稀与合并**  
-   - 若半径 (r) 内不存在代表点，则该点作为新的代表点保留；
-   - 若存在代表点，则将该点按权重合并至对应代表点。
+2. **Spatial Hash Construction**  
+   The 3D space is divided into grid cells with edge length (r), and a hash mapping is built as a spatial index.
 
-5. **尺度约束与参数更新**  
-   对合并后的高斯尺度施加上限约束，输出最终高斯集合。
+3. **Radius Neighborhood Query**  
+   For each Gaussian, neighbor search is performed only within its own grid cell and the surrounding 27 neighboring cells.。
 
----
+4. **Thinning and Merging**
+    - If no representative exists within radius(r), the Gaussian is retained as a new representative.
+    - If a representative exists, the Gaussian is merged into it using weighted aggregation.
 
-## 3. 数学与公式说明（Mathematical Formulation）
+5. **Scale Constraint and Parameter Update**  
+   A scale upper bound is applied to merged Gaussians, and the final Gaussian set is output.
 
-### 3.1 高斯点表示
+## 3. Mathematical Formulation
 
-设输入高斯点集合为：
+### 3.1 Gaussian Representation
 
- $$[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, {\Sigma}_i, \mathbf{f}_i, \alpha_i) \}]$$
+Let the input Gaussian set be defined as:
 
-其中：
-- $(\mathbf{x}_i \in \mathbb{R}^3 )$ ：高斯中心位置  
-- $({\Sigma}_i)$ ：尺度或协方差近似  
-- $( \mathbf{f}_i)$ ：颜色或 SH 特征  
-- $(\alpha_i)$ ：不透明度  
+$$[\mathcal{G} = \{ g_i \mid g_i = (\mathbf{x}_i, {\Sigma}_i, \mathbf{f}_i, \alpha_i) \}]$$
 
-----
+where:
+- $(\mathbf{x}_i \in \mathbb{R}^3 )$ is the Gaussian center
+- $({\Sigma}_i)$represents scale or covariance approximation
+- $( \mathbf{f}_i)$denotes color or spherical harmonics (SH) features
+- $(\alpha_i)$ is the opacity
 
-### 3.2 半径约束判定
+### 3.2 Radius Constraint
 
-对于高斯点 $(g_i)$，若存在代表点 $(g_j )$ 满足：
+For a Gaussian $(g_i)$，if there exists a representative $(g_j )$ such that:
 
 $$[\|\mathbf{x}_i - \mathbf{x}_j\|_2 \le r]$$
 
-则认为两者在空间上冗余，需要执行合并操作；否则， $(g_i)$ 作为新的代表点保留。
+then the two Gaussians are considered spatially redundant and should be merged. Otherwise, $(g_i)$ is preserved as a new representative.
 
----
+### 3.3 Weight Definition
 
-### 3.3 权重定义
-
-合并权重定义为：
+The merge weight is defined as:
 
 $$
-\[
+[
 w_i = \alpha_i
-\]
+]
 $$
 
-（工程中可扩展为 $$\( w_i = \alpha_i \cdot s_i \)，其中 \( s_i \)$$ 表示局部尺度因子。）
+（In practice, this can be extended to $( w_i = \alpha_i \cdot s_i )，where (s_i)$ is a local scale factor.）
 
 ---
 
-### 3.4 位置与特征合并
+### 3.4 Position and Feature Merging
 
-**位置合并：**
+**Position merging:**
 
 $$
-\[
+[
 \mathbf{x}_{\text{new}} =
 \frac{\sum_i w_i \mathbf{x}_i}{\sum_i w_i}
-\]
+]
 $$
 
-**特征合并（颜色 / SH）：**
+**Feature merging (color / SH):**
 
 $$
-\[
+[
 \mathbf{f}_{\text{new}} =
 \frac{\sum_i w_i \mathbf{f}_i}{\sum_i w_i}
-\]
+]
 $$
 
 ---
 
-### 3.5 不透明度融合
+### 3.5 Opacity Fusion
 
-采用乘法模型进行融合：
+Opacity is merged using a multiplicative model:
 
 $$
-\[
+[
 \alpha_{\text{new}} = 1 - \prod_i (1 - \alpha_i)
-\]
+]
 $$
 
-该方式能够保持遮挡关系的一致性。
+This formulation preserves consistent occlusion behavior.
 
 ---
 
-### 3.6 尺度合并与约束
+### 3.6 Scale Merging and Constraint
 
-位置方差估计：
+Position variance estimation:
 
 $$
-\[
-\boldsymbol{\sigma}^2_{\text{pos}} =
+[
+{\sigma}^2_{\text{pos}} =
 \mathbb{E}[\mathbf{x}^2] - \mathbf{x}_{\text{new}}^2
-\]
+]
 $$
 
-尺度融合：
+Scale fusion:
 
 $$
-\[
-\boldsymbol{\sigma}^2_{\text{new}} =
-\boldsymbol{\sigma}^2_{\text{pos}} + \mathbb{E}[\boldsymbol{\Sigma}_i^2]
-\]
+[
+{\sigma}^2_{\text{new}} =
+{\sigma}^2_{\text{pos}} + \mathbb{E}[{\Sigma}_i^2]
+]
 $$
 
-并引入尺度上限约束：
+An upper bound constraint is applied:
 
 $$
-\[
-\boldsymbol{\Sigma}_{\text{new}} \le k \cdot \mathbb{E}[\boldsymbol{\Sigma}_i]
-\]
+[
+{\Sigma}_{\text{new}} \le k \cdot \mathbb{E}[{\Sigma}_i]
+]
 $$
 
-其中 $$\( k \)$$ 为经验系数，用于防止尺度异常膨胀。
+where $(k)$ is an empirical coefficient used to prevent excessive scale inflation.
 
 ---
 
-### 3.7 哈希网格与 27 邻域
+### 3.7 Hash Grid and 27-Cell Neighborhood
 
-当网格单元边长设置为 $$\( r \)$$ 时，任意距离不超过 $$\( r \)$$ 的点，其网格索引在三个坐标轴方向上的偏移范围为 $$\([-1, 1]\)$$。  
-因此，仅需检查：
+When the grid cell edge length is set to $(r)$, any two points within distance $(r)$ must differ by at most $([-1, 1])$ grid units along each axis.
+Therefore, only:
 
 $$
-\[
+[
 3 \times 3 \times 3 = 27
-\]
+]
 $$
 
-个相邻网格单元即可保证不遗漏任何潜在近邻点。
+neighboring grid cells need to be examined to ensure no valid neighbors are missed.
+
+## 4. Computational Complexity
+
+Let (N) be the number of input Gaussians and (M) the number of representatives after thinning（typically $( M \ll N ) $）。
+
+- **Sorting:**
+
+$$[O(N \log N)] $$
+
+- **Radius-based thinning and merging (with hash grid acceleration):**  
+  Each Gaussian checks only a constant number of candidates on average:
+
+$$[O(N)]$$
+
+- **Overall time complexity:**
+
+$$[O(N \log N)]$$
+
+- **Space complexity:**
+
+$$[ O(N)]$$
 
 ---
 
-## 4. 计算复杂度分析（Computational Complexity）
+## 5. Advantages and Effects
 
-设输入点数为 \( N \)，抽稀后代表点数为 \( M \)（通常 \( M \ll N \)）。
+### 5.1 Visual Quality
+- Eliminates grid artifacts introduced by voxel-based thinning
+- Suppresses Gaussian stacking and ghosting in high-density regions
+- Preserves structural continuity and boundary stability
 
-- **排序阶段：**  
- $$\[
-  O(N \log N)
-  \] $$
+### 5.2 Engineering and Performance
+- Near-linear complexity, suitable for million- to ten-million-scale datasets
+- Simple hash grid structure, easy to implement on CPU, WASM, or GPU
+- No dependence on covariance decomposition or KL-divergence computation, ensuring numerical stability
 
-- **半径抽稀与合并阶段（哈希网格加速）：**  
-  平均情况下，每个点仅检查常数数量的候选点：  
- $$\[
-  O(N)
-  \]$$
+### 5.3 General Applicability
+- No multi-level LOD hierarchy required; suitable for single-layer model optimization
+- Can serve as a preprocessing, compression, or loading optimization module for 3DGS data
+- Easily decoupled and integrated with rendering schedulers and streaming systems
 
-- **总体时间复杂度：**  
- $$\[
-  O(N \log N)
-  \]$$
+## 6. Conclusion
 
-- **空间复杂度：**  
-$$\[
-  O(N)
-  \]$$
+The **radius-based spatial thinning and merge scheme** suppresses redundant Gaussian primitives through spatial distance constraints. Without relying on regular voxel partitioning or information-theoretic metrics, it achieves a high-quality and scalable thinning approach for 3D Gaussian data, balancing visual fidelity with engineering performance and making it well suited for deployment in large-scale 3DGS systems.
 
----
+Moreover, this scheme naturally serves as a solid foundation for **Level of Detail (LOD)** construction. By progressively increasing the radius threshold \( r \), a hierarchy of Gaussian representations from fine to coarse can be generated while preserving consistent merging rules and stable spatial distributions. Each radius corresponds to a distinct spatial resolution, ensuring a minimum inter-Gaussian distance at every level and avoiding the abrupt transitions and structural discontinuities commonly observed in voxel-based LOD methods.
 
-## 5. 技术效果与方案优势
-
-### 5.1 视觉效果优势
-- 消除规则体素抽稀带来的格子感  
-- 抑制高密度区域高斯点的堆叠与重影  
-- 保持场景结构连续性与边界稳定性  
-
-### 5.2 工程与性能优势
-- 近似线性复杂度，适合百万级甚至千万级数据  
-- 哈希网格结构简单，易于 CPU / WASM / GPU 实现  
-- 不依赖复杂协方差分解或 KL 距离计算，数值稳定  
-
-### 5.3 方法通用性
-- 不引入多层级 LOD，适用于单层模型优化  
-- 可作为 3DGS 数据预处理、压缩与加载优化模块  
-- 易于与渲染调度、流式加载等系统解耦集成  
-
----
-
-## 6. 总结
-
-**基于半径约束的空间抽稀与合并方案**通过空间距离抑制冗余高斯点，在不依赖规则体素划分和信息论度量的前提下，实现了高质量、可扩展的 3D Gaussian 数据抽稀方法，兼顾视觉效果与工程性能，适合在大规模 3DGS 系统中落地应用。
+Because all levels follow the same radius constraint and merging strategy, strong geometric, density, and visual coherence is maintained across LODs. This allows seamless integration with runtime scheduling mechanisms based on view distance, screen-space error (SSE), or other adaptive criteria, enabling smooth, stable, and engineering-friendly multi-level rendering and streaming of 3D Gaussian Splatting data.
