@@ -169,9 +169,7 @@ where $\cdot$ denotes the quaternion inner product.
 After hemisphere alignment, quaternions are accumulated using weighted summation:
 
 $$
-\tilde{\mathbf{q}}
-=
-\sum_i w_i \, \mathbf{q}_i'
+\tilde{\mathbf{q}} = \sum_i w_i \, \mathbf{q}_i'
 $$
 
 where $w_i$ is the weight associated with the $i$-th Gaussian.
@@ -180,11 +178,7 @@ where $w_i$ is the weight associated with the $i$-th Gaussian.
 
 The accumulated quaternion is normalized to obtain the merged rotation:
 
-$$
-\mathbf{q}_{\mathrm{new}}
-=
-\frac{\tilde{\mathbf{q}}}{\lVert \tilde{\mathbf{q}} \rVert}
-$$
+$$\mathbf{q}_{\mathrm{new}}=\frac{\tilde{\mathbf{q}}}{\lVert \tilde{\mathbf{q}} \rVert}$$
 
 This quaternion represents the principal axis orientation of the merged Gaussian ellipsoid.
 
